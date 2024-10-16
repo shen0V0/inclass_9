@@ -1,131 +1,91 @@
-import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart';
 
 class DatabaseHelper {
-  static const _databaseName = "MyDatabase.db";
-  static const _databaseVersion = 1;
+  static final _dbName = "cardOrganizer.db";
+  static final _dbVersion = 1;
 
-  // Folders table columns
-  static const folderTable = 'folders';
-  static const folderId = 'id';
-  static const folderName = 'name';
-  static const folderTimestamp = 'timestamp';
+  static final tableFolders = 'folders';
+  static final tableCards = 'cards';
 
-  // Cards table columns
-  static const cardTable = 'cards';
-  static const cardId = 'id';
-  static const cardName = 'name';
-  static const cardSuit = 'suit';
-  static const cardImageUrl = 'image_url';
-  static const cardFolderId = 'folder_id';
+  static final columnId = 'id';
+  static final columnFolderName = 'name';
+  static final columnFolderLimit = 'max_limit';
+  
+  static final columnFolderId = 'folder_id';
+  static final columnCardNumber = 'card_number';
+  static final columnImagePath = 'image_path';
 
+  // Singleton pattern
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
-  late Database _database;
+  static Database? _database;
 
-  Future<Database> get db async {
-    if (_database != null) return _database;
+  Future<Database> get database async {
+    if (_database != null) return _database!;
     _database = await _initDatabase();
-    return _database;
+    return _database!;
   }
 
-  Future<Database> _initDatabase() async {
-    final documentsDirectory = await getApplicationDocumentsDirectory();
-    final path = join(documentsDirectory.path, _databaseName);
-    return await openDatabase(
-      path,
-      version: _databaseVersion,
-      onCreate: _onCreate,
-    );
+  _initDatabase() async {
+    String path = join(await getDatabasesPath(), _dbName);
+    return await openDatabase(path, version: _dbVersion, onCreate: _onCreate);
   }
 
   Future _onCreate(Database db, int version) async {
     await db.execute('''
-      CREATE TABLE $folderTable (
-        $folderId INTEGER PRIMARY KEY AUTOINCREMENT,
-        $folderName TEXT NOT NULL,
-        $folderTimestamp TEXT NOT NULL
+      CREATE TABLE $tableFolders (
+        $columnId INTEGER PRIMARY KEY,
+        $columnFolderName TEXT NOT NULL,
+        $columnFolderLimit INTEGER NOT NULL
       )
     ''');
-
+    
     await db.execute('''
-      CREATE TABLE $cardTable (
-        $cardId INTEGER PRIMARY KEY AUTOINCREMENT,
-        $cardName TEXT NOT NULL,
-        $cardSuit TEXT NOT NULL,
-        $cardImageUrl TEXT NOT NULL,
-        $cardFolderId INTEGER NOT NULL,
-        FOREIGN KEY ($cardFolderId) REFERENCES $folderTable ($folderId) ON DELETE CASCADE
+      CREATE TABLE $tableCards (
+        $columnId INTEGER PRIMARY KEY,
+        $columnFolderId INTEGER NOT NULL,
+        $columnCardNumber INTEGER NOT NULL,
+        $columnImagePath TEXT NOT NULL,
+        FOREIGN KEY ($columnFolderId) REFERENCES $tableFolders($columnId) ON DELETE CASCADE
       )
     ''');
   }
 
-  // Folders CRUD Operations
-  Future<void> createFolder(String folderName) async {
-    final db = await instance.db;
-    await db.insert(folderTable, {
-      folderName: folderName,
-      folderTimestamp: DateTime.now().toIso8601String(),
-    });
+  // Insert Folder
+  Future<int> insertFolder(Map<String, dynamic> row) async {
+    Database db = await instance.database;
+    return await db.insert(tableFolders, row);
   }
 
-  Future<void> updateFolder(int id, String newName) async {
-    final db = await instance.db;
-    await db.update(
-      folderTable,
-      {folderName: newName},
-      where: '$folderId = ?',
-      whereArgs: [id],
-    );
+  // Insert Card
+  Future<int> insertCard(Map<String, dynamic> row) async {
+    Database db = await instance.database;
+    return await db.insert(tableCards, row);
   }
 
-  Future<void> deleteFolder(int id) async {
-    final db = await instance.db;
-    await db.delete(folderTable, where: '$folderId = ?', whereArgs: [id]);
+  // Get all folders
+  Future<List<Map<String, dynamic>>> getFolders() async {
+    Database db = await instance.database;
+    return await db.query(tableFolders);
   }
 
-  Future<List<Map<String, dynamic>>> fetchFolders() async {
-    final db = await instance.db;
-    return await db.query(folderTable);
+  // Get cards for a specific folder
+  Future<List<Map<String, dynamic>>> getCards(int folderId) async {
+    Database db = await instance.database;
+    return await db.query(tableCards, where: '$columnFolderId = ?', whereArgs: [folderId]);
   }
 
-  // Cards CRUD Operations
-  Future<void> createCard(String name, String suit, String imageUrl, int folderId) async {
-    final db = await instance.db;
-    int cardCount = Sqflite.firstIntValue(
-        await db.rawQuery('SELECT COUNT(*) FROM $cardTable WHERE $cardFolderId = ?', [folderId])) ?? 0;
-
-    if (cardCount >= 6) {
-      throw Exception('This folder can only hold 6 cards.');
-    }
-
-    await db.insert(cardTable, {
-      cardName: name,
-      cardSuit: suit,
-      cardImageUrl: imageUrl,
-      cardFolderId: folderId,
-    });
+  // Delete a folder (will also delete its cards)
+  Future<int> deleteFolder(int id) async {
+    Database db = await instance.database;
+    return await db.delete(tableFolders, where: '$columnId = ?', whereArgs: [id]);
   }
 
-  Future<void> updateCard(int id, Map<String, dynamic> updates) async {
-    final db = await instance.db;
-    await db.update(
-      cardTable,
-      updates,
-      where: '$cardId = ?',
-      whereArgs: [id],
-    );
-  }
-
-  Future<void> deleteCard(int id) async {
-    final db = await instance.db;
-    await db.delete(cardTable, where: '$cardId = ?', whereArgs: [id]);
-  }
-
-  Future<List<Map<String, dynamic>>> fetchCards(int folderId) async {
-    final db = await instance.db;
-    return await db.query(cardTable, where: '$cardFolderId = ?', whereArgs: [folderId]);
+  // Delete a card
+  Future<int> deleteCard(int id) async {
+    Database db = await instance.database;
+    return await db.delete(tableCards, where: '$columnId = ?', whereArgs: [id]);
   }
 }
